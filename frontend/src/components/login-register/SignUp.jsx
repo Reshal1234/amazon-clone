@@ -38,7 +38,7 @@ const SignUp = () => {
     const { name, number, email, password, confirmPassword } = signUpInfo;
 
     try {
-      const res = await axios.post(`${API_URL}/register`, { 
+      await axios.post(`${API_URL}/register`, { 
         name, number, email, password, confirmPassword
       }, {
         headers: {

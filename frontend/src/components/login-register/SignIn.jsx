@@ -33,7 +33,7 @@ const SignIn = () => {
     const { email, password } = signInInfo; 
 
     try {
-      const res = await axios.post(`${API_URL}/login`, {
+      await axios.post(`${API_URL}/login`, {
         email, password
       }, {
         headers: {

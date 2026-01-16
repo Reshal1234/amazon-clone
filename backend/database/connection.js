@@ -1,8 +1,8 @@
 // Libraries
 const { Sequelize } = require('sequelize');
 
-// Determine if we need SSL (for cloud databases like TiDB, PlanetScale, etc.)
-const isProduction = process.env.NODE_ENV === 'production';
+// TiDB Cloud always requires SSL
+const useSsl = process.env.DB_HOST && process.env.DB_HOST.includes('tidbcloud.com');
 
 // Database Configuration
 const sequelize = new Sequelize(
@@ -14,7 +14,7 @@ const sequelize = new Sequelize(
     port: process.env.DB_PORT || 4000,
     dialect: 'mysql',
     logging: false,
-    dialectOptions: isProduction ? {
+    dialectOptions: useSsl ? {
       ssl: {
         minVersion: 'TLSv1.2',
         rejectUnauthorized: true
