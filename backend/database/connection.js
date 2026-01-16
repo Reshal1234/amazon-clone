@@ -1,5 +1,7 @@
 // Libraries
 const { Sequelize } = require('sequelize');
+// Explicitly require mysql2 for Vercel serverless
+const mysql2 = require('mysql2');
 
 // TiDB Cloud always requires SSL
 const useSsl = process.env.DB_HOST && process.env.DB_HOST.includes('tidbcloud.com');
@@ -13,6 +15,7 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 4000,
     dialect: 'mysql',
+    dialectModule: mysql2,
     logging: false,
     dialectOptions: useSsl ? {
       ssl: {
