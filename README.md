@@ -41,7 +41,7 @@ This is a clone of the well-known e-commerce website Amazon. Customers can brows
 **📖 For detailed step-by-step deployment instructions, see [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)**
 
 Quick overview:
-- **Frontend & Backend:** Deployed on Vercel (free tier)
+- **Frontend & Backend:** Deployed separately on Vercel (free tier)
 - **Database:** TiDB Cloud (free MySQL-compatible database)
 
 ---
@@ -54,7 +54,7 @@ Quick overview:
 
 ### Environment Variables
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the `backend` directory:
 ```env
 DB_HOST=localhost
 DB_PORT=3306
@@ -66,13 +66,14 @@ NODE_ENV=development
 CLIENT_URL=http://localhost:3000
 ```
 
-Create a `.env` file in the `client` directory:
+Create a `.env` file in the `frontend` directory:
 ```env
 REACT_APP_API_URL=http://localhost:8000/api
 ```
 
-### To start the server
+### To start the backend server
 ```shell
+cd backend
 npm install
 npm run seed    # Seed the database with sample products
 npm run dev     # Start with nodemon (auto-reload)
@@ -81,13 +82,13 @@ npm start       # Start normally
 ```
 The server is now running at http://localhost:8000/
 
-### To start the client
+### To start the frontend
 ```shell
-cd client
+cd frontend
 npm install
 npm start
 ```
-The client is now running at http://localhost:3000/
+The frontend is now running at http://localhost:3000/
 
 ---
 
@@ -116,21 +117,26 @@ The client is now running at http://localhost:3000/
 
 ```
 Amazon/
-├── client/                 # React frontend
-│   ├── public/            # Static files
-│   └── src/
-│       ├── components/    # React components
-│       └── App.js         # Main app component
-├── constant/              # Product data
-├── database/              # Database connection
-├── middleware/            # Authentication middleware
-├── models/                # Sequelize models
-├── routes/                # API routes
-├── index.js               # Server entry point
-├── vercel.json            # Vercel configuration
-└── DEPLOYMENT_GUIDE.md    # Deployment instructions
+├── backend/                # Express.js API server
+│   ├── constant/          # Product data
+│   ├── database/          # Database connection
+│   ├── middleware/        # Authentication middleware
+│   ├── models/            # Sequelize models
+│   ├── routes/            # API routes
+│   ├── index.js           # Server entry point
+│   ├── package.json
+│   └── vercel.json        # Backend Vercel config
+├── frontend/              # React application
+│   ├── public/            # Static files & images
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   └── App.js         # Main app component
+│   ├── package.json
+│   └── vercel.json        # Frontend Vercel config
+├── .gitignore
+├── DEPLOYMENT_GUIDE.md    # Deployment instructions
+└── README.md
 ```
-
 
 ---
 

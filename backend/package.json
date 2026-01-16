@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "amazon-clone-backend",
   "version": "1.0.0",
   "description": "Amazon clone Rest API using MySQL and Express",
   "main": "index.js",
@@ -7,8 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "seed": "node defaultData.js",
-    "heroku-postbuild": "cd client && npm install && npm run build"
+    "seed": "node defaultData.js"
   },
   "keywords": [
     "mysql",

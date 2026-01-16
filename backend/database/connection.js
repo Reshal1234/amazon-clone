@@ -40,7 +40,7 @@ const connectDB = async () => {
     console.log('All models synchronized');
   } catch (error) {
     console.error('Unable to connect to the database:', error);
-    process.exit(1);
+    throw error;
   }
 };
 
