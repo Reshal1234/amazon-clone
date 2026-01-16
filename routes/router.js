@@ -1,360 +1,606 @@
 // Libraries
 const router = require('express').Router();
-const Product = require('../models/Product');
-const User = require('../models/User');
-const Razorpay = require('razorpay');
+const { User, Product, Cart, Order } = require('../models');
 const bcrypt = require('bcryptjs');
 const authenticate = require('../middleware/authenticate');
 const { check, validationResult } = require('express-validator');
+const { Op } = require('sequelize');
 
-// Get products API
+// Generate unique order ID
+function generateOrderId() {
+  const timestamp = Date.now().toString(36);
+  const randomStr = Math.random().toString(36).substring(2, 8);
+  return `ORD-${timestamp}-${randomStr}`.toUpperCase();
+}
+
+// ==================== PRODUCT ROUTES ====================
+
+// Get all products API
 router.get("/products", async function(req, res) {
   try {
-    // Fetching data from database
-    const productsData = await Product.find();
-    res.status(200).json(productsData);
+    const { search, category } = req.query;
+    
+    let whereClause = {};
+    
+    // Search by name
+    if (search) {
+      whereClause.name = {
+        [Op.like]: `%${search}%`
+      };
+    }
+    
+    // Filter by category
+    if (category && category !== 'All') {
+      whereClause.category = category;
+    }
+    
+    const products = await Product.findAll({
+      where: whereClause,
+      order: [['id', 'ASC']]
+    });
+    
+    res.status(200).json(products);
   } catch (error) {
     console.log(error);
+    res.status(500).json({ message: "Error fetching products", error: error.message });
   }
-})
+});
 
-// Get individual data
+// Get all categories
+router.get("/categories", async function(req, res) {
+  try {
+    const categories = await Product.findAll({
+      attributes: ['category'],
+      group: ['category']
+    });
+    
+    const categoryList = ['All', ...categories.map(c => c.category)];
+    res.status(200).json(categoryList);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error fetching categories", error: error.message });
+  }
+});
+
+// Get individual product
 router.get("/product/:id", async function(req, res) {
   try {
-    const {id} = req.params;
-    const individualData = await Product.findOne({ id: id });
-    res.status(200).json(individualData);
-  } catch (error) {
-    console.log(error);
-  }
-})
-
-// Post register data
-router.post('/register', [
-    // Check Validation of Fields
-    check('name').not().isEmpty().withMessage("Name can't be empty")
-                      .trim().escape(),
-
-    check('number').not().isEmpty().withMessage("Number can't be empty")
-                      .isNumeric().withMessage("Number must only consist of digits")
-                      .isLength({max: 10, min: 10}).withMessage('Number must consist of 10 digits'),
-
-    check('password').not().isEmpty().withMessage("Password can't be empty")
-                      .isLength({min: 6}).withMessage("Password must be at least 6 characters long")
-                      .matches(/\d/).withMessage("Password must contain a number")
-                      .isAlphanumeric().withMessage("Password can only contain alphabets and numbers"),
-
-    check('confirmPassword').not().isEmpty().withMessage("Confirm Password can't be empty"),
-
-    check('email').not().isEmpty().withMessage("Email can't be empty")
-                      .isEmail().withMessage("Email format is invalid")
-                      .normalizeEmail()
-
-  ], async function(req, res) {
-
-    const errors = validationResult(req);
-
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        "status": false,
-        "message": errors.array()
-      });
-    } else {
-      const { name, number, email, password, confirmPassword } = req.body;
-      const errors = [];
-
-      // Check Duplicate Emails
-      User.findOne({ email: email }, function (err, duplicateEmail) {
-        if (err) {
-          console.log(err);
-        } else {
-          if (duplicateEmail) {
-            errors.push({msg: "Email already registered"});
-            return res.status(400).json({
-              "status": false,
-              "message": errors
-            })
-          } else {
-            // Check Duplicate Numbers
-            User.findOne({ number: number }, async function (err, duplicateNumber) {
-              if (err) {
-                console.log(err);
-              } else {
-                if (duplicateNumber) {
-                  errors.push({msg: "Number already registered"});
-                  return res.status(400).json({
-                    "status": false,
-                    "message": errors
-                  })
-                } else {
-                  // Check if Passwords Match
-                  if (password != confirmPassword) {
-                    errors.push({msg: "Passwords don't match"})
-                    return res.status(400).json({
-                      "status": false,
-                      "message": errors
-                    })
-                  } else {
-                    // Hashing the password
-                    const saltRounds = 10;
-                    const salt = await bcrypt.genSalt(saltRounds);
-                    const hashedPassword = await bcrypt.hash(password, salt);
-
-                    const newUser = new User({
-                      name: name,
-                      number: number,
-                      email: email,
-                      password: hashedPassword
-                    })
-        
-                    const savedUser = await newUser.save();
-        
-                    res.status(201).json(savedUser);
-                  }
-                }
-              }
-            })
-          }
-        }
-      })
-    }
-})
-
-// Post registered data / login 
-router.post('/login', [
-    // Check fields validation
-    check('email').not().isEmpty().withMessage("Email can't be empty")
-                    .isEmail().withMessage("Email format invalid")
-                    .normalizeEmail(),
+    const { id } = req.params;
+    const product = await Product.findByPk(id);
     
-    check('password').not().isEmpty().withMessage("Password can't be empty")
-                    .isLength({min: 6}).withMessage("Password must be at least 6 characters long")
-                    .matches(/\d/).withMessage("Password must contain a number")
-                    .isAlphanumeric().withMessage("Password can only contain alphabets and numbers")
-
-  ], async function(req, res) {
-    const errors = validationResult(req);
-
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        "status": false,
-        "message": errors.array()
-      })
-    } else {
-      const { email, password } = req.body;
-      const errors = [];
-
-      // Check if email exists
-      User.findOne({ email: email }, async function(err, found) {
-        if (err) {
-          console.log(err);
-        } else {
-          if (!found) {
-            errors.push({msg: "Incorrect Email or Password"});
-            return res.status(400).json({
-              "status": false,
-              "message": errors
-            })
-          } else {
-            // Comparing the password
-            bcrypt.compare(password, found.password, async function(err, result) {
-              if(result) {
-
-                // Token generation
-                const token = await found.generateAuthToken();
-
-                // Cookie generation
-                res.cookie("AmazonClone", token, {
-                  expires: new Date(Date.now() + 3600000), // 60 Mins
-                  httpOnly: true
-                });
-
-                return res.status(201).json({
-                  "status": true,
-                  "message": "Logged in successfully!"
-                })
-              } else {
-                errors.push({msg: "Incorrect Email or Password"});
-                return res.status(400).json({
-                  "status": false,
-                  "message": errors
-                })
-              }
-            });
-
-          }
-        }
-      })
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
     }
-  })
-
-// Adding items to cart
-router.post('/addtocart/:id', authenticate, async function(req, res) {
-  try {
-    const {id} = req.params; // Getting id from url parameters 
-    const productInfo = await Product.findOne({ id: id });
-    // console.log(productInfo);
-
-    const userInfo = await User.findOne({ _id: req.userId }); // req.UserId from authenticate.js
-    // console.log(userInfo);
-
-    if (userInfo) {
-      let flag = true;
-
-      for (let i = 0; i < userInfo.cart.length; i++) {
-        // Incrementing qty by one if product already exists in cart
-        if (userInfo.cart[i].id == id) {
-          const test = await User.updateOne({ 'cart.id': id }, {
-            $inc: {
-              'cart.$.qty': 1 
-            }
-          });
-          console.log(test);
-          flag = false;
-        }
-      }
-
-      if (flag) { // flag = true means the product is not in the cart
-        await userInfo.addToCart(id, productInfo); // Adding new product into cart
-      }
-
-      // const cartData = await userInfo.addToCart(id, productInfo);
-      // await userInfo.save();
-      // console.log(cartData);
-      res.status(201).json({
-        status: true,
-        message: userInfo
-      })
-    } else {
-      res.status(400).json({
-        status: false,
-        message: "Invalid User"
-      })
-    }
-
+    
+    res.status(200).json(product);
   } catch (error) {
     console.log(error);
+    res.status(500).json({ message: "Error fetching product", error: error.message });
   }
-})
+});
 
-// Delete items from cart
-router.delete("/delete/:id", authenticate, async function(req, res) {
+// ==================== AUTH ROUTES ====================
+
+// Register user
+router.post('/register', [
+  check('name').not().isEmpty().withMessage("Name can't be empty").trim().escape(),
+  check('number').not().isEmpty().withMessage("Number can't be empty")
+    .isNumeric().withMessage("Number must only consist of digits")
+    .isLength({ max: 10, min: 10 }).withMessage('Number must consist of 10 digits'),
+  check('password').not().isEmpty().withMessage("Password can't be empty")
+    .isLength({ min: 6 }).withMessage("Password must be at least 6 characters long")
+    .matches(/\d/).withMessage("Password must contain a number"),
+  check('confirmPassword').not().isEmpty().withMessage("Confirm Password can't be empty"),
+  check('email').not().isEmpty().withMessage("Email can't be empty")
+    .isEmail().withMessage("Email format is invalid")
+    .normalizeEmail()
+], async function(req, res) {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      status: false,
+      message: errors.array()
+    });
+  }
+
   try {
-    const {id} = req.params;
-    const userData = await User.findOne({ _id: req.userId });
+    const { name, number, email, password, confirmPassword } = req.body;
 
-    userData.cart = userData.cart.filter(function(cartItem) {
-      return cartItem.id != id;
-    })
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        status: false,
+        message: [{ msg: "Passwords don't match" }]
+      });
+    }
 
-    await userData.save();
+    // Check for duplicate email
+    const existingEmail = await User.findOne({ where: { email } });
+    if (existingEmail) {
+      return res.status(400).json({
+        status: false,
+        message: [{ msg: "Email already registered" }]
+      });
+    }
+
+    // Check for duplicate number
+    const existingNumber = await User.findOne({ where: { number } });
+    if (existingNumber) {
+      return res.status(400).json({
+        status: false,
+        message: [{ msg: "Number already registered" }]
+      });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Create user
+    const newUser = await User.create({
+      name,
+      number,
+      email,
+      password: hashedPassword
+    });
 
     res.status(201).json({
       status: true,
-      message: "Item deleted successfully"
-    })
-
-    console.log(userData);
-
-  } catch (error) {
-    res.status(400).json({
-      status: false,
-      message: error
-    })
-  }
-})
-
-// Logout 
-router.get("/logout", authenticate, async function(req, res) {
-  try {
-
-    // Deleting current token on logout from database
-    req.rootUser.tokens = req.rootUser.tokens.filter(function(currentToken) {
-      return currentToken.token !== req.token
-    })
-
-    // Cookie expiration
-    await res.cookie("AmazonClone", {
-      expires: Date.now()
+      message: "User registered successfully",
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email
+      }
     });
 
-    req.rootUser.save();
-
-    return res.status(201).json({
-      "status": true,
-      "message": "Logged out successfully!"
-    })
   } catch (error) {
-    res.status(400).json({
-      "status": false,
-      "message": error
-    })
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: [{ msg: "Server error" }]
+    });
   }
-})
-
-// Verify if user is logged in
-router.get('/getAuthUser', authenticate, async function(req, res) {
-  const userData = await User.findOne({ _id: req.userId });
-  res.send(userData);
 });
 
-// Razorpay 
-router.get("/get-razorpay-key", function(req, res) {
-  res.send({ key: process.env.RAZORPAY_KEY_ID })
-})
+// Login user
+router.post('/login', [
+  check('email').not().isEmpty().withMessage("Email can't be empty")
+    .isEmail().withMessage("Email format invalid")
+    .normalizeEmail(),
+  check('password').not().isEmpty().withMessage("Password can't be empty")
+], async function(req, res) {
+  const errors = validationResult(req);
 
-router.post("/create-order", authenticate, async function(req, res) {
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      status: false,
+      message: errors.array()
+    });
+  }
+
   try {
-    const razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_SECRET
-    })
-    const options = {
-      amount: req.body.amount,
-      currency: 'INR'
+    const { email, password } = req.body;
+
+    // Find user by email
+    const user = await User.findOne({ where: { email } });
+    
+    if (!user) {
+      return res.status(400).json({
+        status: false,
+        message: [{ msg: "Incorrect Email or Password" }]
+      });
     }
-    const order = await razorpay.orders.create(options);
+
+    // Compare passwords
+    const isMatch = await bcrypt.compare(password, user.password);
+    
+    if (!isMatch) {
+      return res.status(400).json({
+        status: false,
+        message: [{ msg: "Incorrect Email or Password" }]
+      });
+    }
+
+    // Generate token
+    const token = await user.generateAuthToken();
+
+    // Set cookie with proper settings for cross-origin (Vercel deployment)
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie("AmazonClone", token, {
+      expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      httpOnly: true,
+      secure: isProduction, // Use secure cookies in production (HTTPS)
+      sameSite: isProduction ? 'none' : 'lax' // 'none' required for cross-origin in production
+    });
 
     res.status(200).json({
-      order: order
+      status: true,
+      message: "Logged in successfully!"
     });
 
   } catch (error) {
-    res.status(400).json(error);
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: [{ msg: "Server error" }]
+    });
   }
-})
+});
 
-router.post("/pay-order", authenticate, async function(req, res) {
+// Logout user
+router.get("/logout", authenticate, async function(req, res) {
   try {
+    // Remove current token from user's tokens array
+    const tokens = req.user.tokens || [];
+    req.user.tokens = tokens.filter(t => t.token !== req.token);
+    await req.user.save();
 
-    const userInfo = await User.findOne({ _id: req.userId }); // req.UserId from authenticate.js
+    // Clear cookie with proper settings for cross-origin
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie("AmazonClone", "", {
+      expires: new Date(0),
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax'
+    });
+
+    res.status(200).json({
+      status: true,
+      message: "Logged out successfully!"
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: "Error logging out"
+    });
+  }
+});
+
+// Get authenticated user
+router.get('/getAuthUser', authenticate, async function(req, res) {
+  try {
+    const user = await User.findByPk(req.userId, {
+      attributes: ['id', 'name', 'email', 'number']
+    });
+    res.status(200).json(user);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error fetching user" });
+  }
+});
+
+// ==================== CART ROUTES ====================
+
+// Get user's cart
+router.get('/cart', authenticate, async function(req, res) {
+  try {
+    const cartItems = await Cart.findAll({
+      where: { userId: req.userId },
+      include: [{
+        model: Product,
+        as: 'product'
+      }]
+    });
+
+    // Calculate totals
+    let subtotal = 0;
+    let totalQty = 0;
+
+    const formattedCart = cartItems.map(item => {
+      const itemTotal = item.product.accValue * item.quantity;
+      subtotal += itemTotal;
+      totalQty += item.quantity;
+      
+      return {
+        id: item.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        product: item.product
+      };
+    });
+
+    res.status(200).json({
+      items: formattedCart,
+      subtotal,
+      totalQty,
+      total: subtotal
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error fetching cart", error: error.message });
+  }
+});
+
+// Add item to cart
+router.post('/addtocart/:id', authenticate, async function(req, res) {
+  try {
+    const productId = parseInt(req.params.id);
     
-    const { amount, razorpayPaymentId, razorpayOrderId, razorpaySignature, orderedProducts, dateOrdered } = req.body;
-    const newOrder = ({
-      products: orderedProducts,
-      date: dateOrdered,
-      isPaid: true,
-      amount: amount,
-      razorpay: {
-        orderId: razorpayOrderId,
-        paymentId: razorpayPaymentId,
-        signature: razorpaySignature
-      }
-    })
+    // Check if product exists
+    const product = await Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({
+        status: false,
+        message: "Product not found"
+      });
+    }
 
-    // Saving order model into user model
-    if (userInfo) {
-      await userInfo.addOrder(newOrder);
+    // Check if product already in cart
+    const existingCartItem = await Cart.findOne({
+      where: {
+        userId: req.userId,
+        productId: productId
+      }
+    });
+
+    if (existingCartItem) {
+      // Increment quantity
+      existingCartItem.quantity += 1;
+      await existingCartItem.save();
     } else {
-      res.status(400).json("Invalid user");
+      // Add new item to cart
+      await Cart.create({
+        userId: req.userId,
+        productId: productId,
+        quantity: 1
+      });
+    }
+
+    res.status(201).json({
+      status: true,
+      message: "Item added to cart"
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: "Error adding to cart"
+    });
+  }
+});
+
+// Update cart item quantity
+router.put('/cart/:id', authenticate, async function(req, res) {
+  try {
+    const cartItemId = parseInt(req.params.id);
+    const { quantity } = req.body;
+
+    const cartItem = await Cart.findOne({
+      where: {
+        id: cartItemId,
+        userId: req.userId
+      }
+    });
+
+    if (!cartItem) {
+      return res.status(404).json({
+        status: false,
+        message: "Cart item not found"
+      });
+    }
+
+    if (quantity <= 0) {
+      await cartItem.destroy();
+      return res.status(200).json({
+        status: true,
+        message: "Item removed from cart"
+      });
+    }
+
+    cartItem.quantity = quantity;
+    await cartItem.save();
+
+    res.status(200).json({
+      status: true,
+      message: "Cart updated"
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: "Error updating cart"
+    });
+  }
+});
+
+// Delete item from cart
+router.delete("/delete/:id", authenticate, async function(req, res) {
+  try {
+    const productId = parseInt(req.params.id);
+
+    const result = await Cart.destroy({
+      where: {
+        userId: req.userId,
+        productId: productId
+      }
+    });
+
+    if (result === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Item not found in cart"
+      });
     }
 
     res.status(200).json({
-      message: "Payment was successful"
-    })
-  } catch(error) {
-    res.status(400).json(error);
+      status: true,
+      message: "Item deleted successfully"
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: "Error deleting item"
+    });
   }
-})
+});
+
+// Clear entire cart
+router.delete("/cart/clear", authenticate, async function(req, res) {
+  try {
+    await Cart.destroy({
+      where: { userId: req.userId }
+    });
+
+    res.status(200).json({
+      status: true,
+      message: "Cart cleared"
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: "Error clearing cart"
+    });
+  }
+});
+
+// ==================== ORDER ROUTES ====================
+
+// Place order
+router.post('/order', authenticate, async function(req, res) {
+  try {
+    const { shippingAddress } = req.body;
+
+    // Validate shipping address
+    if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.address || 
+        !shippingAddress.city || !shippingAddress.state || !shippingAddress.pincode || 
+        !shippingAddress.phone) {
+      return res.status(400).json({
+        status: false,
+        message: "Please provide complete shipping address"
+      });
+    }
+
+    // Get cart items
+    const cartItems = await Cart.findAll({
+      where: { userId: req.userId },
+      include: [{
+        model: Product,
+        as: 'product'
+      }]
+    });
+
+    if (cartItems.length === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Cart is empty"
+      });
+    }
+
+    // Prepare order products and calculate total
+    let totalAmount = 0;
+    const orderProducts = cartItems.map(item => {
+      const itemTotal = item.product.accValue * item.quantity;
+      totalAmount += itemTotal;
+      
+      return {
+        id: item.product.id,
+        name: item.product.name,
+        price: item.product.accValue,
+        quantity: item.quantity,
+        image: item.product.url
+      };
+    });
+
+    // Generate order ID
+    const orderId = generateOrderId();
+
+    // Create order
+    const order = await Order.create({
+      orderId,
+      userId: req.userId,
+      products: orderProducts,
+      totalAmount,
+      shippingAddress,
+      status: 'confirmed'
+    });
+
+    // Clear cart after order placement
+    await Cart.destroy({
+      where: { userId: req.userId }
+    });
+
+    res.status(201).json({
+      status: true,
+      message: "Order placed successfully",
+      orderId: order.orderId,
+      order: {
+        id: order.id,
+        orderId: order.orderId,
+        products: order.products,
+        totalAmount: order.totalAmount,
+        shippingAddress: order.shippingAddress,
+        status: order.status,
+        orderDate: order.orderDate
+      }
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: false,
+      message: "Error placing order",
+      error: error.message
+    });
+  }
+});
+
+// Get user's orders
+router.get('/orders', authenticate, async function(req, res) {
+  try {
+    const orders = await Order.findAll({
+      where: { userId: req.userId },
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.status(200).json(orders);
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: "Error fetching orders",
+      error: error.message
+    });
+  }
+});
+
+// Get single order by order ID
+router.get('/order/:orderId', authenticate, async function(req, res) {
+  try {
+    const { orderId } = req.params;
+    
+    const order = await Order.findOne({
+      where: {
+        orderId: orderId,
+        userId: req.userId
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found"
+      });
+    }
+
+    res.status(200).json(order);
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: "Error fetching order",
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;

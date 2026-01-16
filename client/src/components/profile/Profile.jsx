@@ -6,6 +6,8 @@ import './profile.css';
 import axios from 'axios';
 import Loader from '../loader/Loader';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
 const Profile = () => {
 
   const [isLoading, setIsLoading] = useState(true);
@@ -16,7 +18,7 @@ const Profile = () => {
   useEffect(function() {
     async function fetchUser() {
       try {
-        const res = await axios.get("https://amazonclone-sp.herokuapp.com/api/getAuthUser", {
+        const res = await axios.get(`${API_URL}/getAuthUser`, {
           withCredentials: true
         })
   
@@ -25,7 +27,7 @@ const Profile = () => {
           setIsLoading(false);
         }
       } catch (error) {
-        if (error.response.data.message === "No token provided") {
+        if (error.response?.status === 401) {
           navigate('/login');
         } else {
           console.log(error);

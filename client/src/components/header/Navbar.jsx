@@ -16,6 +16,8 @@ import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
 const Navbar = () => {
 
   $(window).on('scroll', function() {
@@ -36,131 +38,136 @@ const Navbar = () => {
 
   const [products, setProducts] = useState([]);
 
+  useEffect(function() {
+    // Fetching user data
+    async function fetchUser() {
+      try {
+        const res = await axios.get(`${API_URL}/getAuthUser`, {
+          withCredentials: true
+        });
 
-    useEffect(function() {
-      // Fetching user data
-      async function fetchUser() {
-        try {
-          const res = await axios.get("https://amazonclone-sp.herokuapp.com/api/getAuthUser", {
+        if (res) {
+          const name = res.data.name;
+          const fname = name.substring(0, name.indexOf(' ')) || name;
+          const fletter = name.substring(0, 1);
+
+          // Get cart count
+          const cartRes = await axios.get(`${API_URL}/cart`, {
             withCredentials: true
           });
-  
-          if (res) {
-            const name = res.data.name;
-            const fname = name.substring(0, name.indexOf(' '));
-            const fletter = name.substring(0, 1);
-    
-            const cartArr = res.data.cart;
-            let totalQty = 0;
-            for (let i = 0; i < cartArr.length; i++) {
-              totalQty += cartArr[i].qty;
-            }
-    
-            setLoginMsg(fname);
-            setCartValue(totalQty);
-            setProfilePhoto(<div onClick={toggleDrawer(true)} className="profile"><div id='profile-letter'>{fletter}</div></div>);
-            setLoggedIn(true);
-
-            setTimeout(function() {
-              fetchUser();
-            }, 2000)
-          }
-  
-        } catch (error) {
-          if (error.response.data.message === "No token provided") {
-            
-          } else {
-            console.log(error);
-          }
-        }
-      }
-
-      // Fetching products
-      async function fetchProducts() {
-        const res = await axios.get("https://amazonclone-sp.herokuapp.com/api/products");
-        setProducts(res.data);
-      }
-
-      fetchUser();
-      fetchProducts();
-    }, [])
-
-    const navigate = useNavigate();
-    // Logout 
-      function logout() {
-        try {
-          const res = axios.get("https://amazonclone-sp.herokuapp.com/api/logout", {
-            withCredentials: true
-          })
-
-          if (res) {
-            navigate("/");
           
-            setLoginMsg("Sign in");
-            setCartValue("0");
-            setProfilePhoto(<NavLink to="/login" className='profile'><PersonIcon id="profile-icon" /></NavLink>);
-            setLoggedIn("false");
-          }
-        } catch (error) {
+          const totalQty = cartRes.data.totalQty || 0;
+
+          setLoginMsg(fname);
+          setCartValue(totalQty);
+          setProfilePhoto(<div onClick={toggleDrawer(true)} className="profile"><div id='profile-letter'>{fletter}</div></div>);
+          setLoggedIn(true);
+        }
+
+      } catch (error) {
+        // Handle all 401 errors gracefully (user not logged in)
+        if (error.response?.status === 401) {
+          // User not logged in - this is expected, don't log error
+          setLoggedIn(false);
+        } else {
           console.log(error);
         }
       }
+    }
 
-    // Profile button
-    const anchor = "right";
-    
-    const [state, setState] = React.useState({
-      right: false
-    });
-  
-    const toggleDrawer = (open) => (event) => {
-      if (event.type === 'keydown' && (event.key === 'Tab' || event.key === 'Shift')) {
-        return;
-      }
-      setState({ ...state, [anchor]: open });
-    };
-  
-    const list = (anchor) => (
-      <Box
-        sx={{ width: anchor === 'top' || anchor === 'bottom' ? 'auto' : 250 }}
-        role="presentation"
-        onClick={toggleDrawer(false)}
-        onKeyDown={toggleDrawer(false)}
-      >
-        <div className='profile-options'>
-          <h5>Hello, {loginMsg}</h5>
-          <a href='/profile'>
-            <div className='profile-option'>
-              <PersonOutlineOutlinedIcon className='profile-icon' /> Your Account
-            </div>
-          </a>
-          <a href='/orders'>
-            <div className='profile-option'>
-              <ShoppingCartOutlinedIcon className='profile-icon' /> Your Orders
-            </div>
-          </a>
-          <div>
-            <div className='profile-option' onClick={ logout }>
-              <LogoutOutlinedIcon className='profile-icon' /> Sign Out
-            </div>
-          </div>
-        </div>
-      </Box>
-    );
-
-    const [searchText, setSearchText] = useState("");
-    const [listHidden, setListHidden] = useState(true);
-
-    // Search filter 
-    function searchChange(e) {
-      setSearchText(e.target.value);
-      setListHidden(false);
-      if (e.target.value === "" || e.target.value.replace(/\s/g, "") == "") {
-        setListHidden(true);
+    // Fetching products
+    async function fetchProducts() {
+      try {
+        const res = await axios.get(`${API_URL}/products`);
+        setProducts(res.data);
+      } catch (error) {
+        console.log(error);
       }
     }
 
-    let path="";
+    fetchUser();
+    fetchProducts();
+
+    // Refresh cart count periodically
+    const interval = setInterval(fetchUser, 5000);
+    return () => clearInterval(interval);
+  }, [])
+
+  const navigate = useNavigate();
+  
+  // Logout 
+  async function logout() {
+    try {
+      const res = await axios.get(`${API_URL}/logout`, {
+        withCredentials: true
+      });
+
+      if (res) {
+        navigate("/");
+      
+        setLoginMsg("Sign in");
+        setCartValue("0");
+        setProfilePhoto(<NavLink to="/login" className='profile'><PersonIcon id="profile-icon" /></NavLink>);
+        setLoggedIn(false);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // Profile button
+  const anchor = "right";
+  
+  const [state, setState] = React.useState({
+    right: false
+  });
+
+  const toggleDrawer = (open) => (event) => {
+    if (event.type === 'keydown' && (event.key === 'Tab' || event.key === 'Shift')) {
+      return;
+    }
+    setState({ ...state, [anchor]: open });
+  };
+
+  const list = (anchor) => (
+    <Box
+      sx={{ width: anchor === 'top' || anchor === 'bottom' ? 'auto' : 250 }}
+      role="presentation"
+      onClick={toggleDrawer(false)}
+      onKeyDown={toggleDrawer(false)}
+    >
+      <div className='profile-options'>
+        <h5>Hello, {loginMsg}</h5>
+        <a href='/profile'>
+          <div className='profile-option'>
+            <PersonOutlineOutlinedIcon className='profile-icon' /> Your Account
+          </div>
+        </a>
+        <a href='/orders'>
+          <div className='profile-option'>
+            <ShoppingCartOutlinedIcon className='profile-icon' /> Your Orders
+          </div>
+        </a>
+        <div>
+          <div className='profile-option' onClick={ logout }>
+            <LogoutOutlinedIcon className='profile-icon' /> Sign Out
+          </div>
+        </div>
+      </div>
+    </Box>
+  );
+
+  const [searchText, setSearchText] = useState("");
+  const [listHidden, setListHidden] = useState(true);
+
+  // Search filter 
+  function searchChange(e) {
+    setSearchText(e.target.value);
+    setListHidden(false);
+    if (e.target.value === "" || e.target.value.replace(/\s/g, "") === "") {
+      setListHidden(true);
+    }
+  }
     
   return (
     <header>
@@ -173,7 +180,7 @@ const Navbar = () => {
         </div>
 
         <div className="search">
-          <input type="text" name="search" className="searchbar" onChange={searchChange} value={searchText} ></input>
+          <input type="text" name="search" className="searchbar" onChange={searchChange} value={searchText} placeholder="Search products..." />
           <button className="search-icon">
             <SearchIcon />
           </button>
@@ -186,8 +193,8 @@ const Navbar = () => {
             }).slice(0, 5).map((product, index) => {
               return (
                 <ListItem key={index} className='list-item'>
-                  <NavLink to={`/product/${product.id}`}>
-                  {product.name}
+                  <NavLink to={`/product/${product.id}`} onClick={() => setListHidden(true)}>
+                    {product.name}
                   </NavLink>
                 </ListItem>
               )

@@ -4,37 +4,38 @@ import './product.css';
 import { useParams, useNavigate } from 'react-router-dom';
 import Loader from '../loader/Loader';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
 const Product = () => {
-
-  // Loader
   const [isLoading, setIsLoading] = useState(true);
+  const [product, setProduct] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+  const [message, setMessage] = useState('');
   
-  const {id} = useParams("");
+  const { id } = useParams();
+  const navigate = useNavigate();
 
-  // Fetching individual product from API
-  const [product, setProduct] = useState();
-
-  useEffect(function() {
+  useEffect(() => {
     async function fetchSingleProduct() {
       try {
-        const res = await axios.get('https://amazonclone-sp.herokuapp.com/api/product/' + id);
+        const res = await axios.get(`${API_URL}/product/${id}`);
         setProduct(res.data);
         setIsLoading(false);
       } catch (error) {
         console.log(error);
+        setIsLoading(false);
       }
     }
 
     fetchSingleProduct();
-  }, [])
+  }, [id]);
 
-  // To navigate to a diff page
-  const navigate = useNavigate();
   // Add to cart
-  async function addToCart(id) {
+  async function addToCart() {
     try {
-      const res = await axios.post('https://amazonclone-sp.herokuapp.com/api/addtocart/' + id, {
-        product
+      await axios.post(`${API_URL}/addtocart/${product.id}`, {
+        quantity
       }, {
         headers: {
           'Content-Type': 'application/json'
@@ -42,168 +43,221 @@ const Product = () => {
         withCredentials: true
       });
       
+      setMessage('Added to cart successfully!');
+      setTimeout(() => setMessage(''), 3000);
     } catch (error) {
-      if (error.response.data.message === "No token provided") {
-        navigate('/login'); // Go to login if there's no cookie
-      }
-    }
-  }
-
-  const [userData, setUserData] = useState();
-  async function fetchUser() {
-    try {
-      const res = await axios.get('https://amazonclone-sp.herokuapp.com/api/getAuthUser', {withCredentials: true});
-      if (res) {
-        setUserData(res.data);
-      }
-    } catch (error) {
-      if (error.response.data.message == "No token provided") {
+      if (error.response?.status === 401) {
         navigate('/login');
       } else {
-        console.log(error);
+        setMessage(error.response?.data?.message || 'Error adding to cart');
+        setTimeout(() => setMessage(''), 3000);
       }
     }
   }
 
-  // Buy now
-  function loadRazorpay() {
+  // Buy now - Add to cart and redirect to checkout
+  async function buyNow() {
     try {
-
-      fetchUser();
-
-      const script = document.createElement("script");
-      script.src="https://checkout.razorpay.com/v1/checkout.js";
-
-      script.onerror = () => {
-        alert("Razorpay SDK failed to load. Try again later");
-      };
-      script.onload = async () => {
-        try {
-
-          const orderAmount = product.accValue;
-          const orderedProducts = {
-            id: product.id,
-            name: product.name,
-            qty: 1,
-            img: product.url
-          }
-
-          const res = await axios.post("https://amazonclone-sp.herokuapp.com/api/create-order", {
-            amount: orderAmount + '00'
-          }, {
-            withCredentials: true
-          })
-          
-          const { id, amount, currency } = res.data.order;
-          const { key } = await axios.get("https://amazonclone-sp.herokuapp.com/api/get-razorpay-key");
-
-          var today = new Date();
-          var date = today.getDate()+'/'+(today.getMonth()+1)+'/'+today.getFullYear();
-
-          const options = {
-            key: key,
-            amount: amount.toString(),
-            currency: currency,
-            order_id: id,
-            name: product.name,
-            handler: async function(response) {
-              const result = await axios.post("https://amazonclone-sp.herokuapp.com/api/pay-order", {
-                orderedProducts: orderedProducts,
-                dateOrdered: date,
-                amount: amount,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpayOrderId: response.razorpay_order_id,
-                razorpaySignature: response.razorpay_signature
-              }, {
-                withCredentials: true
-              })
-              navigate("/orders");
-            },
-            prefill: {
-              name: userData.name,
-              email: userData.email,
-              contact: '+91' + userData.number
-            },
-            theme: {
-              color: '#1976D2'
-            }
-          };
-
-          const paymentObject = new window.Razorpay(options);
-          paymentObject.open();
-
-          
-
-        } catch (error) {
-          console.log(error);
-        }
-      };
-
-      document.body.appendChild(script);
-    }
-    catch (error) {
-      if (error.response.data.message === "No token provided") {
-        navigate('/login'); // Go to login if there's no cookie
+      await axios.post(`${API_URL}/addtocart/${product.id}`, {
+        quantity
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
+      
+      navigate('/checkout');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        navigate('/login');
+      } else {
+        setMessage(error.response?.data?.message || 'Error processing request');
+        setTimeout(() => setMessage(''), 3000);
       }
     }
   }
 
+  // Calculate delivery date (3 days from now)
   const today = new Date();
   today.setDate(today.getDate() + 3);
-  const dayArr = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  const monthArr = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const dayArr = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const monthArr = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const day = dayArr[today.getDay()];
   const date = today.getDate();
   const month = monthArr[today.getMonth()];
-  const deliveryDate = day + ", " + date + " " + month;
+  const deliveryDate = `${day}, ${date} ${month}`;
 
-  if (product) {
+  // Helper function to fix image path
+  const fixImagePath = (path) => {
+    if (!path) return '';
+    // Remove leading ../ or ./ from paths
+    return path.replace(/^\.\.\//, '').replace(/^\.\//, '');
+  };
+
+  // Get all images for carousel
+  const getImages = () => {
+    if (!product) return [];
+    const images = [];
+    
+    if (product.url) images.push(fixImagePath(product.url));
+    if (product.resUrl) {
+      const fixedResUrl = fixImagePath(product.resUrl);
+      if (fixedResUrl !== fixImagePath(product.url)) {
+        images.push(fixedResUrl);
+      }
+    }
+    if (product.images && Array.isArray(product.images)) {
+      product.images.forEach(img => {
+        const fixedImg = fixImagePath(img);
+        if (!images.includes(fixedImg)) images.push(fixedImg);
+      });
+    }
+    return images.length > 0 ? images : [fixImagePath(product.url) || fixImagePath(product.resUrl)];
+  };
+
+  if (isLoading) {
     return (
-      <div className='product-section'>
-        <div className='left'>
-          <img src={ product.resUrl }></img>
+      <div>
+        <Loader />
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="product-not-found">
+        <h2>Product not found</h2>
+        <button onClick={() => navigate('/')}>Go to Home</button>
+      </div>
+    );
+  }
+
+  const images = getImages();
+
+  return (
+    <div className='product-section'>
+      {message && (
+        <div className={`message-toast ${message.includes('Error') ? 'error' : 'success'}`}>
+          {message}
         </div>
-        <div className='middle'>
-          <div className='product-details'>
-            <h4>{ product.name }</h4>
-            <div className='divider'></div>
-            <div className='price'>
-              { product.discount } 
-              <span>
-                <span className='sup'> ₹</span>
-                { product.value }
-                <span className='sup'>00</span>
-              </span>
-            </div>
-            <div className='mrp'>M.R.P.: <strike>{ product.mrp }</strike></div>
-            <p className='taxes'>Inclusive of all taxes</p>
+      )}
+      
+      <div className='left'>
+        {/* Main Image */}
+        <div className="main-image">
+          <img src={images[selectedImage]} alt={product.name} />
+        </div>
+        
+        {/* Image Thumbnails */}
+        {images.length > 1 && (
+          <div className="image-thumbnails">
+            {images.map((img, index) => (
+              <div 
+                key={index}
+                className={`thumbnail ${selectedImage === index ? 'active' : ''}`}
+                onClick={() => setSelectedImage(index)}
+              >
+                <img src={img} alt={`${product.name} - ${index + 1}`} />
+              </div>
+            ))}
           </div>
+        )}
+      </div>
+      
+      <div className='middle'>
+        <div className='product-details'>
+          <h4>{product.name}</h4>
+          <span className="product-category-label">{product.category}</span>
+          <div className='divider'></div>
+          
+          <div className='price'>
+            {product.discount && <span className="discount-tag">{product.discount}</span>}
+            <span className="price-value">
+              <span className='sup'>₹</span>
+              {product.value || product.accValue}
+              <span className='sup'>00</span>
+            </span>
+          </div>
+          
+          <div className='mrp'>M.R.P.: <strike>₹{product.mrp}</strike></div>
+          <p className='taxes'>Inclusive of all taxes</p>
+          
+          {/* Stock Status */}
+          <div className={`stock-status ${product.stock > 0 ? 'in-stock' : 'out-of-stock'}`}>
+            {product.stock > 0 ? `In Stock (${product.stock} available)` : 'Out of Stock'}
+          </div>
+        </div>
+        
+        {/* Description */}
+        {product.description && (
+          <div className='product-description'>
+            <h6>Description</h6>
+            <p>{product.description}</p>
+          </div>
+        )}
+        
+        {/* About Product Points */}
+        {product.points && product.points.length > 0 && (
           <div className='about-product'>
             <h6>About this item</h6>
             <ul>
-              { product.points.map(function(point, index) {
-                return (
-                  <li key={index}>{point}</li>
-                )
-              }) }
+              {product.points.map((point, index) => (
+                <li key={index}>{point}</li>
+              ))}
             </ul>
           </div>
-        </div>
-        <div className='right'>
-          <h3><span><span className='sup'>₹</span>{ product.value }<span className='sup'>00</span></span></h3>
-          <p><span>FREE delivery:</span> {deliveryDate}</p>
-          <button id="addtocart-btn" onClick={ () => addToCart(product.id) }>Add to Cart</button>
-          <button onClick={loadRazorpay} >Buy Now</button>
+        )}
+      </div>
+      
+      <div className='right'>
+        <div className="buy-box">
+          <h3>
+            <span className='sup'>₹</span>
+            {product.value || product.accValue}
+            <span className='sup'>00</span>
+          </h3>
+          
+          <p className="delivery-info">
+            <span>FREE delivery:</span> {deliveryDate}
+          </p>
+          
+          {product.stock > 0 ? (
+            <>
+              <div className="quantity-selector">
+                <label>Quantity:</label>
+                <select 
+                  value={quantity} 
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                >
+                  {[...Array(Math.min(10, product.stock))].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>{i + 1}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <button 
+                id="addtocart-btn" 
+                className="add-cart-btn"
+                onClick={addToCart}
+              >
+                Add to Cart
+              </button>
+              
+              <button 
+                className="buy-now-btn"
+                onClick={buyNow}
+              >
+                Buy Now
+              </button>
+            </>
+          ) : (
+            <p className="out-of-stock-msg">Currently unavailable</p>
+          )}
         </div>
       </div>
-    )
-  } else {
-    return (
-      <div>
-        { isLoading ? <Loader /> : "" }
-      </div>
-    )
-  }
-}
+    </div>
+  );
+};
 
 export default Product;

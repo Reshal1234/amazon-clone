@@ -7,6 +7,8 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert/Alert';
 import AlertTitle from '@mui/material/AlertTitle/AlertTitle';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
 const SignUp = () => {
 
   const [signUpInfo, setSignUpInfo] = useState({
@@ -36,7 +38,7 @@ const SignUp = () => {
     const { name, number, email, password, confirmPassword } = signUpInfo;
 
     try {
-      const res = await axios.post('https://amazonclone-sp.herokuapp.com/api/register', { 
+      const res = await axios.post(`${API_URL}/register`, { 
         name, number, email, password, confirmPassword
       }, {
         headers: {

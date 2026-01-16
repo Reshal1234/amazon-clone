@@ -1,85 +1,60 @@
 // Libraries
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../database/connection');
 const jwt = require('jsonwebtoken');
-const Product = require('./Product');
+const bcrypt = require('bcryptjs');
 
-const userSchema = new mongoose.Schema({
+const User = sequelize.define('User', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   name: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   number: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   email: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+    validate: {
+      isEmail: true
+    }
   },
   password: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
-  confirmPassword: {
-    type: String
-  },
-  tokens: [
-    {
-      token: {
-        type: String,
-        required: true
-      }
-    }
-  ],
-  cart: [
-    {
-      id: Number,
-      cartItem: {},
-      qty: Number
-    }
-  ],
-  orders: [
-    {}
-  ]
-  
+  tokens: {
+    type: DataTypes.JSON,
+    defaultValue: []
+  }
+}, {
+  tableName: 'users',
+  timestamps: true
 });
 
-// Token generation
-const secretKey = process.env.SECRET_KEY;
-userSchema.methods.generateAuthToken = async function() {
+// Instance method for generating auth token
+User.prototype.generateAuthToken = async function() {
   try {
-    const token = jwt.sign({ _id: this._id }, secretKey);
-    this.tokens = this.tokens.concat({token: token});
+    const token = jwt.sign({ id: this.id }, process.env.SECRET_KEY);
+    // Clone the array to ensure Sequelize detects the change
+    const tokens = JSON.parse(JSON.stringify(this.tokens || []));
+    tokens.push({ token });
+    this.tokens = tokens;
+    // Mark the field as changed for Sequelize to detect
+    this.changed('tokens', true);
     await this.save();
     return token;
   } catch (error) {
     console.log(error);
+    throw error;
   }
-}
+};
 
-// Add to cart
-userSchema.methods.addToCart = async function(id, productInfo) {
-  try {
-    this.cart = this.cart.concat({ id: id, cartItem: productInfo, qty: 1 });
-    await this.save();
-  } catch (error) {
-    console.log(error);
-  }
-}
-
-// Orders
-userSchema.methods.addOrder = async function(orderInfo) {
-  try {
-    this.orders = this.orders.concat({ orderInfo });
-    this.cart = [];
-    await this.save();
-  } catch (error) {
-    console.log(error);
-  }
-}
-
-// Model
-const User = mongoose.model("users", userSchema);
-
-// Export model
 module.exports = User;

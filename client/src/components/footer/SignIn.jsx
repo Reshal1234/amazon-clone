@@ -3,6 +3,8 @@ import Loader from '../loader/Loader';
 import axios from 'axios';
 import { NavLink } from 'react-router-dom';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
 const SignIn = () => {
 
   // Loader
@@ -12,7 +14,7 @@ const SignIn = () => {
   useEffect(function() {
     async function fetchUser() {
       try {
-        const res = await axios.get("https://amazonclone-sp.herokuapp.com/api/getAuthUser", {
+        const res = await axios.get(`${API_URL}/getAuthUser`, {
           withCredentials: true
         });
 
@@ -20,8 +22,10 @@ const SignIn = () => {
           setShowSignIn(false);
         }
       } catch (error) {
-        if (error.response.data.message == "No token provided") {
-          
+        // Handle all 401 errors gracefully (user not logged in)
+        if (error.response?.status === 401) {
+          // User not logged in - show sign in option
+          setShowSignIn(true);
         } else {
           console.log(error);
         }

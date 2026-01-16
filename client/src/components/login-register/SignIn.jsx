@@ -5,6 +5,8 @@ import Alert from '@mui/material/Alert/Alert';
 import AlertTitle from '@mui/material/AlertTitle/AlertTitle';
 import axios from 'axios';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
 const SignIn = () => {
 
   const [signInInfo, setSignInInfo] = useState({
@@ -31,11 +33,10 @@ const SignIn = () => {
     const { email, password } = signInInfo; 
 
     try {
-      const res = await axios.post("https://amazonclone-sp.herokuapp.com/api/login", {
+      const res = await axios.post(`${API_URL}/login`, {
         email, password
       }, {
         headers: {
-          'Access-Control-Allow-Origin': 'http://localhost:3000',
           'Content-Type': 'application/json'
         },
         withCredentials: true // Cookie credentials (tokens)
